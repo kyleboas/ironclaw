@@ -148,15 +148,13 @@ fn normalize_required_fields(schema: &serde_json::Value) -> serde_json::Value {
                 normalized.insert(key.clone(), normalize_required_fields(value));
             }
 
+            // GPT-5 models require that object types with properties have a 'required' array
+            // If missing, add an empty array. If present, preserve it (already copied above).
             if map.get("type") == Some(&serde_json::Value::String("object".to_string()))
-                && let Some(serde_json::Value::Object(properties)) = map.get("properties")
+                && map.contains_key("properties")
+                && !normalized.contains_key("required")
             {
-                let required = properties
-                    .keys()
-                    .cloned()
-                    .map(serde_json::Value::String)
-                    .collect::<Vec<_>>();
-                normalized.insert("required".to_string(), serde_json::Value::Array(required));
+                normalized.insert("required".to_string(), serde_json::Value::Array(vec![]));
             }
 
             serde_json::Value::Object(normalized)
@@ -467,18 +465,20 @@ mod tests {
         let rig_tools = convert_tools(&tools, "gpt-5.2");
         assert_eq!(rig_tools.len(), 1);
 
+        // The original required array should be preserved
         let required = rig_tools[0].parameters["required"]
             .as_array()
             .expect("required should be array");
-        assert_eq!(required.len(), 3);
+        assert_eq!(required.len(), 2);
         assert!(required.contains(&serde_json::Value::String("method".to_string())));
         assert!(required.contains(&serde_json::Value::String("url".to_string())));
-        assert!(required.contains(&serde_json::Value::String("body".to_string())));
 
+        // Nested object should preserve its required array
         let nested_required = rig_tools[0].parameters["properties"]["body"]["required"]
             .as_array()
             .expect("nested required should be array");
-        assert_eq!(nested_required.len(), 2);
+        assert_eq!(nested_required.len(), 1);
+        assert!(nested_required.contains(&serde_json::Value::String("q".to_string())));
     }
 
     #[test]
@@ -499,6 +499,31 @@ mod tests {
 
         let rig_tools = convert_tools(&tools, "mock-model-v1");
         assert_eq!(rig_tools[0].parameters, tools[0].parameters);
+    }
+
+    #[test]
+    fn test_convert_tools_adds_empty_required_for_gpt5_when_missing() {
+        let tools = vec![IronToolDefinition {
+            name: "search".to_string(),
+            description: "Search tool".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "limit": {"type": "integer"}
+                }
+                // No required array - all fields are optional
+            }),
+        }];
+
+        let rig_tools = convert_tools(&tools, "gpt-5.2");
+        assert_eq!(rig_tools.len(), 1);
+
+        // Should add empty required array for strict schema validation
+        let required = rig_tools[0].parameters["required"]
+            .as_array()
+            .expect("required should be array");
+        assert_eq!(required.len(), 0, "required should be empty array when all fields are optional");
     }
 
     #[test]
