@@ -5,6 +5,8 @@ use chrono::{DateTime, Utc};
 use deadpool_postgres::{Config, Pool, Runtime};
 use rust_decimal::Decimal;
 #[cfg(feature = "postgres")]
+use std::error::Error as StdError;
+#[cfg(feature = "postgres")]
 use tokio_postgres::NoTls;
 use uuid::Uuid;
 
@@ -69,7 +71,7 @@ impl Store {
         migrations::runner()
             .run_async(&mut **client)
             .await
-            .map_err(|e| DatabaseError::Migration(e.to_string()))?;
+            .map_err(|e| DatabaseError::Migration(format_error_chain(&e)))?;
         Ok(())
     }
 
@@ -452,6 +454,20 @@ impl Store {
 
         Ok(())
     }
+}
+
+#[cfg(feature = "postgres")]
+fn format_error_chain(err: &dyn StdError) -> String {
+    let mut message = err.to_string();
+    let mut source = err.source();
+
+    while let Some(cause) = source {
+        message.push_str(": ");
+        message.push_str(&cause.to_string());
+        source = cause.source();
+    }
+
+    message
 }
 
 // ==================== Sandbox Jobs ====================

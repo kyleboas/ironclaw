@@ -60,6 +60,19 @@ impl From<crate::setup::channels::ChannelSetupError> for SetupError {
     }
 }
 
+fn format_error_chain(err: &dyn std::error::Error) -> String {
+    let mut message = err.to_string();
+    let mut source = err.source();
+
+    while let Some(cause) = source {
+        message.push_str(": ");
+        message.push_str(&cause.to_string());
+        source = cause.source();
+    }
+
+    message
+}
+
 /// Setup wizard configuration.
 #[derive(Debug, Clone, Default)]
 pub struct SetupConfig {
@@ -474,7 +487,9 @@ impl SetupWizard {
             migrations::runner()
                 .run_async(&mut **client)
                 .await
-                .map_err(|e| SetupError::Database(format!("Migration failed: {}", e)))?;
+                .map_err(|e| {
+                    SetupError::Database(format!("Migration failed: {}", format_error_chain(&e)))
+                })?;
 
             print_success("Migrations applied");
         }
@@ -489,10 +504,9 @@ impl SetupWizard {
 
             print_info("Running migrations...");
 
-            backend
-                .run_migrations()
-                .await
-                .map_err(|e| SetupError::Database(format!("Migration failed: {}", e)))?;
+            backend.run_migrations().await.map_err(|e| {
+                SetupError::Database(format!("Migration failed: {}", format_error_chain(&e)))
+            })?;
 
             print_success("Migrations applied");
         }
