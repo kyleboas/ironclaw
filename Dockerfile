@@ -17,9 +17,11 @@ WORKDIR /app
 
 # Copy manifests first for layer caching
 COPY Cargo.toml Cargo.lock ./
+COPY build.rs ./
 
 # Copy source and build artifacts
 COPY src/ src/
+COPY examples/ examples/
 COPY migrations/ migrations/
 COPY wit/ wit/
 
