@@ -117,15 +117,58 @@ fn convert_messages(messages: &[ChatMessage]) -> (Option<String>, Vec<RigMessage
 }
 
 /// Convert IronClaw tool definitions to rig-core format.
-fn convert_tools(tools: &[IronToolDefinition]) -> Vec<RigToolDefinition> {
+fn convert_tools(tools: &[IronToolDefinition], model_name: &str) -> Vec<RigToolDefinition> {
+    let enforce_strict_required = model_requires_strict_tool_schema(model_name);
+
     tools
         .iter()
         .map(|t| RigToolDefinition {
             name: t.name.clone(),
             description: t.description.clone(),
-            parameters: t.parameters.clone(),
+            parameters: if enforce_strict_required {
+                normalize_required_fields(&t.parameters)
+            } else {
+                t.parameters.clone()
+            },
         })
         .collect()
+}
+
+fn model_requires_strict_tool_schema(model_name: &str) -> bool {
+    let lower = model_name.to_lowercase();
+    lower.starts_with("gpt-5")
+}
+
+fn normalize_required_fields(schema: &serde_json::Value) -> serde_json::Value {
+    match schema {
+        serde_json::Value::Object(map) => {
+            let mut normalized = serde_json::Map::new();
+
+            for (key, value) in map {
+                normalized.insert(key.clone(), normalize_required_fields(value));
+            }
+
+            if map.get("type") == Some(&serde_json::Value::String("object".to_string()))
+                && let Some(serde_json::Value::Object(properties)) = map.get("properties")
+            {
+                let required = properties
+                    .keys()
+                    .cloned()
+                    .map(serde_json::Value::String)
+                    .collect::<Vec<_>>();
+                normalized.insert("required".to_string(), serde_json::Value::Array(required));
+            }
+
+            serde_json::Value::Object(normalized)
+        }
+        serde_json::Value::Array(values) => serde_json::Value::Array(
+            values
+                .iter()
+                .map(normalize_required_fields)
+                .collect::<Vec<_>>(),
+        ),
+        _ => schema.clone(),
+    }
 }
 
 /// Convert IronClaw tool_choice string to rig-core ToolChoice.
@@ -267,7 +310,7 @@ where
         request: ToolCompletionRequest,
     ) -> Result<ToolCompletionResponse, LlmError> {
         let (preamble, history) = convert_messages(&request.messages);
-        let tools = convert_tools(&request.tools);
+        let tools = convert_tools(&request.tools, &self.model_name);
         let tool_choice = convert_tool_choice(request.tool_choice.as_deref());
 
         let rig_req = build_rig_request(
@@ -392,10 +435,70 @@ mod tests {
                 }
             }),
         }];
-        let rig_tools = convert_tools(&tools);
+        let rig_tools = convert_tools(&tools, "mock-model-v1");
         assert_eq!(rig_tools.len(), 1);
         assert_eq!(rig_tools[0].name, "search");
         assert_eq!(rig_tools[0].description, "Search the web");
+    }
+
+    #[test]
+    fn test_convert_tools_normalizes_required_for_gpt5_models() {
+        let tools = vec![IronToolDefinition {
+            name: "http".to_string(),
+            description: "Make HTTP request".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "method": {"type": "string"},
+                    "url": {"type": "string"},
+                    "body": {
+                        "type": "object",
+                        "properties": {
+                            "q": {"type": "string"},
+                            "limit": {"type": "integer"}
+                        },
+                        "required": ["q"]
+                    }
+                },
+                "required": ["method", "url"]
+            }),
+        }];
+
+        let rig_tools = convert_tools(&tools, "gpt-5.2");
+        assert_eq!(rig_tools.len(), 1);
+
+        let required = rig_tools[0].parameters["required"]
+            .as_array()
+            .expect("required should be array");
+        assert_eq!(required.len(), 3);
+        assert!(required.contains(&serde_json::Value::String("method".to_string())));
+        assert!(required.contains(&serde_json::Value::String("url".to_string())));
+        assert!(required.contains(&serde_json::Value::String("body".to_string())));
+
+        let nested_required = rig_tools[0].parameters["properties"]["body"]["required"]
+            .as_array()
+            .expect("nested required should be array");
+        assert_eq!(nested_required.len(), 2);
+    }
+
+    #[test]
+    fn test_convert_tools_preserves_schema_for_non_gpt5_models() {
+        let tools = vec![IronToolDefinition {
+            name: "http".to_string(),
+            description: "Make HTTP request".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "method": {"type": "string"},
+                    "url": {"type": "string"},
+                    "body": {"type": "object"}
+                },
+                "required": ["method", "url"]
+            }),
+        }];
+
+        let rig_tools = convert_tools(&tools, "mock-model-v1");
+        assert_eq!(rig_tools[0].parameters, tools[0].parameters);
     }
 
     #[test]
