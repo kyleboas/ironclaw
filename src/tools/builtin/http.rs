@@ -160,10 +160,14 @@ impl Tool for HttpTool {
         let url = require_str(&params, "url")?;
         let parsed_url = validate_url(url)?;
 
-        // Parse headers
+        // Parse headers — accepts either a JSON object or a JSON-encoded string
+        // (strict-mode providers demote bare object types to string).
         let headers: HashMap<String, String> = params
             .get("headers")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .and_then(|v| match v {
+                serde_json::Value::String(s) => serde_json::from_str(s).ok(),
+                _ => serde_json::from_value(v.clone()).ok(),
+            })
             .unwrap_or_default();
         let headers_vec: Vec<(String, String)> = headers
             .iter()
@@ -190,11 +194,18 @@ impl Tool for HttpTool {
             request = request.header(&key, &value);
         }
 
-        // Add body if present
-        let body_bytes = if let Some(body) = params.get("body") {
-            let bytes = serde_json::to_vec(body)
+        // Add body if present — accepts either a JSON value or a JSON-encoded
+        // string (strict-mode providers demote bare object types to string).
+        let body_bytes = if let Some(raw_body) = params.get("body") {
+            let body = match raw_body {
+                serde_json::Value::String(s) => {
+                    serde_json::from_str::<serde_json::Value>(s).unwrap_or(raw_body.clone())
+                }
+                _ => raw_body.clone(),
+            };
+            let bytes = serde_json::to_vec(&body)
                 .map_err(|e| ToolError::InvalidParameters(format!("invalid body JSON: {}", e)))?;
-            request = request.json(body);
+            request = request.json(&body);
             Some(bytes)
         } else {
             None

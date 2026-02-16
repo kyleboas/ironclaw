@@ -663,19 +663,15 @@ impl ChannelsConfig {
             // Railway and other PaaS platforms inject a dynamic PORT env var.
             // Respect it as a fallback when GATEWAY_PORT is not explicitly set.
             let gateway_port = if let Some(port_str) = optional_env("GATEWAY_PORT")? {
-                port_str
-                    .parse()
-                    .map_err(|e| ConfigError::InvalidValue {
-                        key: "GATEWAY_PORT".to_string(),
-                        message: format!("must be a valid port number: {e}"),
-                    })?
+                port_str.parse().map_err(|e| ConfigError::InvalidValue {
+                    key: "GATEWAY_PORT".to_string(),
+                    message: format!("must be a valid port number: {e}"),
+                })?
             } else if let Some(port_str) = optional_env("PORT")? {
-                port_str
-                    .parse()
-                    .map_err(|e| ConfigError::InvalidValue {
-                        key: "PORT".to_string(),
-                        message: format!("must be a valid port number: {e}"),
-                    })?
+                port_str.parse().map_err(|e| ConfigError::InvalidValue {
+                    key: "PORT".to_string(),
+                    message: format!("must be a valid port number: {e}"),
+                })?
             } else {
                 3000
             };

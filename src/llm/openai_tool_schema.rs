@@ -23,24 +23,71 @@ impl OpenAiToolSchemaProvider {
         model_name.to_lowercase().starts_with("gpt-5")
     }
 
+    /// Normalize a JSON Schema for OpenAI strict mode compatibility.
+    ///
+    /// Strict mode requires:
+    /// - `required` lists every key in `properties`
+    /// - `additionalProperties` is `false` on all object types
+    /// - Every object type has a `properties` key
+    ///
+    /// Object types without `properties` (freeform objects) cannot be represented
+    /// in strict mode, so they are demoted to `"type": "string"` and the
+    /// description is updated to indicate JSON string encoding.
     fn normalize_required_fields(schema: &serde_json::Value) -> serde_json::Value {
         match schema {
             serde_json::Value::Object(map) => {
-                let mut normalized = serde_json::Map::new();
+                let is_object_type =
+                    map.get("type") == Some(&serde_json::Value::String("object".to_string()));
+                let has_properties =
+                    matches!(map.get("properties"), Some(serde_json::Value::Object(_)));
 
+                // Bare object type (no `properties` key) — strict mode cannot
+                // represent freeform objects, so demote to string.
+                if is_object_type && !has_properties {
+                    let mut demoted = serde_json::Map::new();
+                    demoted.insert(
+                        "type".to_string(),
+                        serde_json::Value::String("string".to_string()),
+                    );
+                    if let Some(desc) = map.get("description") {
+                        let suffix = " (as JSON string)";
+                        let new_desc = match desc.as_str() {
+                            Some(s) if !s.contains(suffix) => format!("{}{}", s, suffix),
+                            Some(s) => s.to_string(),
+                            None => suffix.trim().to_string(),
+                        };
+                        demoted.insert(
+                            "description".to_string(),
+                            serde_json::Value::String(new_desc),
+                        );
+                    }
+                    return serde_json::Value::Object(demoted);
+                }
+
+                // Recursively normalize all values.
+                let mut normalized = serde_json::Map::new();
                 for (key, value) in map {
                     normalized.insert(key.clone(), Self::normalize_required_fields(value));
                 }
 
-                if map.get("type") == Some(&serde_json::Value::String("object".to_string()))
-                    && let Some(serde_json::Value::Object(properties)) = map.get("properties")
-                {
-                    let required = properties
-                        .keys()
-                        .cloned()
-                        .map(serde_json::Value::String)
-                        .collect::<Vec<_>>();
-                    normalized.insert("required".to_string(), serde_json::Value::Array(required));
+                // Object with `properties` — set required to all keys and lock
+                // down additionalProperties.
+                if is_object_type {
+                    if let Some(serde_json::Value::Object(properties)) =
+                        normalized.get("properties")
+                    {
+                        let required = properties
+                            .keys()
+                            .cloned()
+                            .map(serde_json::Value::String)
+                            .collect::<Vec<_>>();
+                        normalized
+                            .insert("required".to_string(), serde_json::Value::Array(required));
+                    }
+                    normalized.insert(
+                        "additionalProperties".to_string(),
+                        serde_json::Value::Bool(false),
+                    );
                 }
 
                 serde_json::Value::Object(normalized)
@@ -163,5 +210,68 @@ mod tests {
         assert_eq!(nested_required.len(), 2);
         assert!(nested_required.contains(&serde_json::Value::String("q".into())));
         assert!(nested_required.contains(&serde_json::Value::String("limit".into())));
+
+        // additionalProperties must be false on all object nodes
+        assert_eq!(normalized["additionalProperties"], serde_json::json!(false));
+        assert_eq!(
+            normalized["properties"]["body"]["additionalProperties"],
+            serde_json::json!(false)
+        );
+    }
+
+    #[test]
+    fn test_normalize_demotes_bare_object_to_string() {
+        // Mimics the http tool schema where body is a bare object
+        let input = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "url": {"type": "string"},
+                "body": {
+                    "type": "object",
+                    "description": "Request body"
+                },
+                "headers": {
+                    "type": "object",
+                    "additionalProperties": {"type": "string"},
+                    "description": "HTTP headers"
+                }
+            },
+            "required": ["url"]
+        });
+
+        let normalized = OpenAiToolSchemaProvider::normalize_required_fields(&input);
+
+        // body should be demoted to string
+        assert_eq!(
+            normalized["properties"]["body"]["type"],
+            serde_json::json!("string")
+        );
+        assert_eq!(
+            normalized["properties"]["body"]["description"],
+            serde_json::json!("Request body (as JSON string)")
+        );
+        // bare-object demotion strips other keys like additionalProperties
+        assert!(
+            normalized["properties"]["body"]
+                .get("additionalProperties")
+                .is_none()
+        );
+
+        // headers (object with additionalProperties but no properties) also demoted
+        assert_eq!(
+            normalized["properties"]["headers"]["type"],
+            serde_json::json!("string")
+        );
+        assert_eq!(
+            normalized["properties"]["headers"]["description"],
+            serde_json::json!("HTTP headers (as JSON string)")
+        );
+
+        // required should list all property keys
+        let required = normalized["required"].as_array().expect("required array");
+        assert_eq!(required.len(), 3);
+        assert!(required.contains(&serde_json::Value::String("url".into())));
+        assert!(required.contains(&serde_json::Value::String("body".into())));
+        assert!(required.contains(&serde_json::Value::String("headers".into())));
     }
 }
