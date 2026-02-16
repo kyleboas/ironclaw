@@ -1,4 +1,4 @@
-# Railway + Slack Deployment Guide
+# Railway + Slack Deployment Guide (No NEAR AI Required)
 
 This guide walks you through deploying IronClaw on Railway and chatting with it from Slack.
 
@@ -8,12 +8,13 @@ This guide walks you through deploying IronClaw on Railway and chatting with it 
 - PostgreSQL with `pgvector`
 - Slack Events webhook (`/webhook/slack`)
 - Slack bot replies in DMs and @mentions
+- A non-NEARAI LLM backend (for example OpenAI)
 
 ## Prerequisites
 
 - A Railway account
 - A Slack workspace where you can create apps
-- A NEAR AI session token (`NEARAI_SESSION_TOKEN`)
+- An LLM API key (OpenAI, Anthropic, Ollama, or OpenAI-compatible endpoint)
 
 ---
 
@@ -34,18 +35,11 @@ If you prefer Docker builds, Railway can also deploy from your Dockerfile.
 
 ## 2) Configure Railway environment variables
 
-Set these variables on your IronClaw service:
+Set these variables on your IronClaw service.
 
-### Required
+### Required (platform + app)
 
 - `DATABASE_URL` = Railway Postgres URL
-- `NEARAI_SESSION_TOKEN` = your NEAR AI session token
-- `NEARAI_BASE_URL` = `https://cloud-api.near.ai`
-- `NEARAI_AUTH_URL` = `https://private.near.ai`
-- `NEARAI_API_MODE` = `chat_completions`
-
-### Recommended for Railway
-
 - `GATEWAY_ENABLED` = `true`
 - `GATEWAY_HOST` = `0.0.0.0`
 - `CLI_ENABLED` = `false`
@@ -53,7 +47,38 @@ Set these variables on your IronClaw service:
 - `HTTP_HOST` = `0.0.0.0`
 - `HTTP_WEBHOOK_SECRET` = long random secret string
 
-> IronClaw also supports Railway's dynamic `PORT` env var for the web gateway when `GATEWAY_PORT` is not set.
+> IronClaw supports Railway's dynamic `PORT` env var for the web gateway when `GATEWAY_PORT` is not set.
+
+### Required (choose one LLM backend)
+
+#### Option A: OpenAI (recommended for simplest setup)
+
+- `LLM_BACKEND` = `openai`
+- `OPENAI_API_KEY` = your API key
+- `OPENAI_MODEL` = e.g. `gpt-4o-mini` (or your preferred model)
+
+#### Option B: Anthropic
+
+- `LLM_BACKEND` = `anthropic`
+- `ANTHROPIC_API_KEY` = your API key
+- `ANTHROPIC_MODEL` = e.g. `claude-sonnet-4-20250514`
+
+#### Option C: OpenAI-compatible endpoint
+
+- `LLM_BACKEND` = `openai_compatible`
+- `LLM_BASE_URL` = endpoint base URL
+- `LLM_API_KEY` = API key (if required)
+- `LLM_MODEL` = model name expected by your endpoint
+
+#### Option D: Ollama (only if reachable from Railway runtime)
+
+- `LLM_BACKEND` = `ollama`
+- `OLLAMA_BASE_URL` = Ollama URL
+- `OLLAMA_MODEL` = model name
+
+### Optional (NEAR AI)
+
+You can still use NEAR AI, but it is **not required** for Railway + Slack.
 
 ### Slack-related secrets
 
@@ -141,6 +166,13 @@ Expected behavior:
 - Slack requires fast webhook ACKs (~3s).
 - Ensure app startup succeeded and DB connection works.
 - Check logs for startup/config errors.
+
+### Startup fails with missing LLM credentials
+
+- Verify your selected `LLM_BACKEND` matches the env vars you set.
+- For OpenAI: ensure `OPENAI_API_KEY` is set.
+- For Anthropic: ensure `ANTHROPIC_API_KEY` is set.
+- For OpenAI-compatible: ensure `LLM_BASE_URL` is set.
 
 ### Slack sends events but bot doesn't respond
 
