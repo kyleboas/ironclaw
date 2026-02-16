@@ -523,7 +523,11 @@ mod tests {
         let required = rig_tools[0].parameters["required"]
             .as_array()
             .expect("required should be array");
-        assert_eq!(required.len(), 0, "required should be empty array when all fields are optional");
+        assert_eq!(
+            required.len(),
+            0,
+            "required should be empty array when all fields are optional"
+        );
     }
 
     #[test]
