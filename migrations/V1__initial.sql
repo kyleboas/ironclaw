@@ -5,6 +5,9 @@
 -- NOTE: Requires pgvector to be installed on PostgreSQL server
 CREATE EXTENSION IF NOT EXISTS vector;
 
+-- Enable gen_random_uuid() used by workspace tables
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- ==================== Conversations ====================
 
 CREATE TABLE conversations (
