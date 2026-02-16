@@ -264,6 +264,7 @@ cargo test test_name
 ```
 
 - **Telegram channel**: See [docs/TELEGRAM_SETUP.md](docs/TELEGRAM_SETUP.md) for setup and DM pairing.
+- **Railway + Slack deployment**: See [docs/RAILWAY_SLACK_SETUP.md](docs/RAILWAY_SLACK_SETUP.md) for production setup on Railway with Slack channel + DM chat.
 - **Changing channel sources**: Run `./channels-src/telegram/build.sh` before `cargo build` so the updated WASM is bundled.
 
 ## OpenClaw Heritage
