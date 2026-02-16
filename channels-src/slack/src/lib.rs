@@ -169,7 +169,9 @@ impl Guest for SlackChannel {
                         channel_host::LogLevel::Info,
                         "Responding to Slack URL verification",
                     );
-                    json_response(200, serde_json::json!({"challenge": challenge}))
+                    // Slack expects the raw challenge value in the body for URL verification.
+                    // Returning JSON can cause verification failures in some clients/environments.
+                    text_response(200, challenge)
                 } else {
                     json_response(400, serde_json::json!({"error": "Missing challenge"}))
                 }
@@ -385,6 +387,17 @@ fn json_response(status: u16, value: serde_json::Value) -> OutgoingHttpResponse 
         status,
         headers_json: headers.to_string(),
         body,
+    }
+}
+
+/// Create a plain text HTTP response.
+fn text_response(status: u16, value: String) -> OutgoingHttpResponse {
+    let headers = serde_json::json!({"Content-Type": "text/plain; charset=utf-8"});
+
+    OutgoingHttpResponse {
+        status,
+        headers_json: headers.to_string(),
+        body: value.into_bytes(),
     }
 }
 
