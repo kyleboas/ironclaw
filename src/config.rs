@@ -660,16 +660,29 @@ impl ChannelsConfig {
             .map(|s| s.to_lowercase() == "true" || s == "1")
             .unwrap_or(true)
         {
-            Some(GatewayConfig {
-                host: optional_env("GATEWAY_HOST")?.unwrap_or_else(|| "127.0.0.1".to_string()),
-                port: optional_env("GATEWAY_PORT")?
-                    .map(|s| s.parse())
-                    .transpose()
+            // Railway and other PaaS platforms inject a dynamic PORT env var.
+            // Respect it as a fallback when GATEWAY_PORT is not explicitly set.
+            let gateway_port = if let Some(port_str) = optional_env("GATEWAY_PORT")? {
+                port_str
+                    .parse()
                     .map_err(|e| ConfigError::InvalidValue {
                         key: "GATEWAY_PORT".to_string(),
                         message: format!("must be a valid port number: {e}"),
                     })?
-                    .unwrap_or(3000),
+            } else if let Some(port_str) = optional_env("PORT")? {
+                port_str
+                    .parse()
+                    .map_err(|e| ConfigError::InvalidValue {
+                        key: "PORT".to_string(),
+                        message: format!("must be a valid port number: {e}"),
+                    })?
+            } else {
+                3000
+            };
+
+            Some(GatewayConfig {
+                host: optional_env("GATEWAY_HOST")?.unwrap_or_else(|| "127.0.0.1".to_string()),
+                port: gateway_port,
                 auth_token: optional_env("GATEWAY_AUTH_TOKEN")?,
                 user_id: optional_env("GATEWAY_USER_ID")?.unwrap_or_else(|| "default".to_string()),
             })
