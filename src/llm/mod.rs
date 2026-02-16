@@ -11,6 +11,7 @@ mod costs;
 pub mod failover;
 mod nearai;
 mod nearai_chat;
+mod openai_tool_schema;
 mod provider;
 mod reasoning;
 mod retry;
@@ -38,6 +39,7 @@ use secrecy::ExposeSecret;
 
 use crate::config::{LlmBackend, LlmConfig, NearAiApiMode, NearAiConfig};
 use crate::error::LlmError;
+use openai_tool_schema::OpenAiToolSchemaProvider;
 
 /// Create an LLM provider based on configuration.
 ///
@@ -98,7 +100,9 @@ fn create_openai_provider(config: &LlmConfig) -> Result<Arc<dyn LlmProvider>, Ll
 
     let model = client.completion_model(&oai.model);
     tracing::info!("Using OpenAI direct API (model: {})", oai.model);
-    Ok(Arc::new(RigAdapter::new(model, &oai.model)))
+    Ok(Arc::new(OpenAiToolSchemaProvider::new(Arc::new(
+        RigAdapter::new(model, &oai.model),
+    ))))
 }
 
 fn create_anthropic_provider(config: &LlmConfig) -> Result<Arc<dyn LlmProvider>, LlmError> {
@@ -181,5 +185,7 @@ fn create_openai_compatible_provider(config: &LlmConfig) -> Result<Arc<dyn LlmPr
         compat.base_url,
         compat.model
     );
-    Ok(Arc::new(RigAdapter::new(model, &compat.model)))
+    Ok(Arc::new(OpenAiToolSchemaProvider::new(Arc::new(
+        RigAdapter::new(model, &compat.model),
+    ))))
 }
