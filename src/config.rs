@@ -260,18 +260,18 @@ pub fn default_libsql_path() -> PathBuf {
 
 /// Which LLM backend to use.
 ///
-/// Defaults to `NearAi` to keep IronClaw close to the NEAR ecosystem.
-/// Users can override with `LLM_BACKEND` env var to use their own API keys.
+/// Defaults to `Ollama` for zero-config local deployment.
+/// Users can override with `LLM_BACKEND` env var to use cloud providers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LlmBackend {
-    /// NEAR AI proxy (default) -- session or API key auth
-    #[default]
+    /// NEAR AI proxy -- session or API key auth
     NearAi,
     /// Direct OpenAI API
     OpenAi,
     /// Direct Anthropic API
     Anthropic,
-    /// Local Ollama instance
+    /// Local Ollama instance (default)
+    #[default]
     Ollama,
     /// Any OpenAI-compatible endpoint (e.g. vLLM, LiteLLM, Together)
     OpenAiCompatible,
@@ -411,7 +411,7 @@ pub struct NearAiConfig {
 
 impl LlmConfig {
     fn resolve(settings: &Settings) -> Result<Self, ConfigError> {
-        // Determine backend: env var > settings > default (NearAi)
+        // Determine backend: env var > settings > default (Ollama)
         let backend: LlmBackend = if let Some(b) = optional_env("LLM_BACKEND")? {
             b.parse().map_err(|e| ConfigError::InvalidValue {
                 key: "LLM_BACKEND".to_string(),
@@ -422,15 +422,15 @@ impl LlmConfig {
                 Ok(backend) => backend,
                 Err(e) => {
                     tracing::warn!(
-                        "Invalid llm_backend '{}' in settings: {}. Using default NearAi.",
+                        "Invalid llm_backend '{}' in settings: {}. Using default Ollama.",
                         b,
                         e
                     );
-                    LlmBackend::NearAi
+                    LlmBackend::default()
                 }
             }
         } else {
-            LlmBackend::NearAi
+            LlmBackend::default()
         };
 
         // Always resolve NEAR AI config (used as fallback and for embeddings)

@@ -129,7 +129,7 @@ pub struct EmbeddingsSettings {
 }
 
 fn default_embeddings_provider() -> String {
-    "nearai".to_string()
+    "openai".to_string()
 }
 
 fn default_embeddings_model() -> String {

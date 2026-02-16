@@ -113,7 +113,7 @@ src/
 │   ├── policy.rs       # PolicyRule system with severity/actions
 │   └── leak_detector.rs # Secret detection (API keys, tokens, etc.)
 │
-├── llm/                # LLM integration (NEAR AI only)
+├── llm/                # LLM integration (multi-backend)
 │   ├── provider.rs     # LlmProvider trait, message types
 │   ├── nearai.rs       # NEAR AI chat-api implementation
 │   ├── reasoning.rs    # Planning, tool selection, evaluation
@@ -263,20 +263,33 @@ LIBSQL_PATH=~/.ironclaw/ironclaw.db    # libSQL local path (default)
 # LIBSQL_URL=libsql://xxx.turso.io    # Turso cloud (optional)
 # LIBSQL_AUTH_TOKEN=xxx                # Required with LIBSQL_URL
 
-# NEAR AI (required)
-NEARAI_SESSION_TOKEN=sess_...
+# LLM Backend (default: ollama)
+LLM_BACKEND=ollama                      # or "nearai", "openai", "anthropic", "openai_compatible"
+
+# NEAR AI (if using nearai backend)
+NEARAI_SESSION_TOKEN=sess_...           # Optional, triggers OAuth if missing
 NEARAI_MODEL=claude-3-5-sonnet-20241022
 NEARAI_BASE_URL=https://private.near.ai
+
+# OpenAI (if using openai backend or embeddings)
+OPENAI_API_KEY=sk-...
+
+# Anthropic (if using anthropic backend)
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Ollama (default backend, if running locally)
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.1
 
 # Agent settings
 AGENT_NAME=ironclaw
 MAX_PARALLEL_JOBS=5
 
-# Embeddings (for semantic memory search)
-OPENAI_API_KEY=sk-...                   # For OpenAI embeddings
+# Embeddings (for semantic memory search, default provider: openai)
+OPENAI_API_KEY=sk-...                   # For OpenAI embeddings (default)
 # Or use NEAR AI embeddings:
-# EMBEDDING_PROVIDER=nearai
-# EMBEDDING_ENABLED=true
+# EMBEDDING_PROVIDER=nearai               # Requires NEARAI_SESSION_TOKEN
+# EMBEDDING_ENABLED=true                  # Auto-enabled if OPENAI_API_KEY is set
 EMBEDDING_MODEL=text-embedding-3-small  # or text-embedding-3-large
 
 # Heartbeat (proactive periodic execution)
