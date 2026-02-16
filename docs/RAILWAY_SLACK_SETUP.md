@@ -7,7 +7,7 @@ This guide walks you through deploying IronClaw on Railway and chatting with it 
 - IronClaw running on Railway
 - PostgreSQL with `pgvector`
 - Slack Events webhook (`/webhook/slack`)
-- Slack bot replies in DMs and @mentions
+- Slack bot replies in DMs and in channels when mentioned (`@YourBot`)
 - A non-NEARAI LLM backend (for example OpenAI)
 
 ## Prerequisites
@@ -109,14 +109,32 @@ This installs channel files under `~/.ironclaw/channels/` and registers Slack cr
 
 ---
 
+
+## Channel + DM behavior (important)
+
+IronClaw's Slack channel currently processes:
+
+- **DMs**: direct messages to the bot (`message.im`)
+- **Channels**: only messages that **mention** the bot (`app_mention`)
+
+So for channel conversations:
+
+1. Invite the bot into the channel (`/invite @YourBot`)
+2. Mention it in each message you want processed (`@YourBot ...`)
+
+If you send a channel message without mentioning the bot, IronClaw will ignore it by design.
+
+---
+
 ## 4) Create and configure your Slack app
 
 1. Go to <https://api.slack.com/apps> and create an app.
 2. Under **OAuth & Permissions**, add bot scopes:
    - `app_mentions:read`
-   - `channels:history` (for mentions in channels)
+   - `channels:history` (public channels)
+   - `groups:history` (private channels, if needed)
    - `chat:write`
-   - `im:history` (for DMs)
+   - `im:history` (DMs)
 3. Install the app to your workspace and copy the **Bot User OAuth Token** (`xoxb-...`).
 4. Under **Event Subscriptions**:
    - Enable events
@@ -179,6 +197,8 @@ Expected behavior:
 - Confirm `slack_bot_token` exists in secrets store.
 - Verify bot has `chat:write` scope.
 - Reinstall app after changing scopes.
+- For channel messages: ensure the bot was invited and you used an `@mention`.
+- For private channels: ensure `groups:history` scope is added and app reinstalled.
 
 ### Can't bind the right port on Railway
 
