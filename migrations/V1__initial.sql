@@ -3,7 +3,18 @@
 
 -- Enable pgvector extension for semantic search
 -- NOTE: Requires pgvector to be installed on PostgreSQL server
-CREATE EXTENSION IF NOT EXISTS vector;
+-- If not available, vector search features will be disabled
+DO $$
+BEGIN
+    CREATE EXTENSION IF NOT EXISTS vector;
+    RAISE NOTICE 'pgvector extension created successfully';
+EXCEPTION
+    WHEN undefined_file THEN
+        RAISE WARNING 'pgvector extension not available - vector search will be disabled';
+    WHEN OTHERS THEN
+        RAISE WARNING 'Could not create pgvector extension: %', SQLERRM;
+END
+$$;
 
 -- Enable gen_random_uuid() used by workspace tables
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -190,6 +201,10 @@ CREATE INDEX idx_memory_documents_updated ON memory_documents(updated_at DESC);
 
 -- ==================== Workspace: Memory Chunks ====================
 -- Documents are chunked for hybrid search (FTS + vector)
+--
+-- NOTE: If pgvector is not available, the embedding column will be JSONB
+-- instead of VECTOR(1536). The migration will succeed, but vector search
+-- operations will fail at runtime. FTS (full-text search) will still work.
 
 CREATE TABLE memory_chunks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -200,17 +215,43 @@ CREATE TABLE memory_chunks (
     -- Full-text search vector
     content_tsv TSVECTOR GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
 
-    -- Semantic search embedding (text-embedding-3-small = 1536 dims)
-    embedding VECTOR(1536),
-
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT unique_chunk_per_doc UNIQUE (document_id, chunk_index)
 );
 
+-- Add embedding column only if pgvector extension is available
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'vector') THEN
+        -- Semantic search embedding (text-embedding-3-small = 1536 dims)
+        ALTER TABLE memory_chunks ADD COLUMN embedding VECTOR(1536);
+        RAISE NOTICE 'Added embedding column with vector type';
+    ELSE
+        -- Fallback to storing embeddings as JSONB if vector type not available
+        ALTER TABLE memory_chunks ADD COLUMN embedding JSONB;
+        RAISE WARNING 'pgvector not available - using JSONB for embeddings (search will be slower)';
+    END IF;
+END
+$$;
+
 CREATE INDEX idx_memory_chunks_tsv ON memory_chunks USING GIN(content_tsv);
-CREATE INDEX idx_memory_chunks_embedding ON memory_chunks
-    USING hnsw(embedding vector_cosine_ops)
-    WITH (m = 16, ef_construction = 64);
+
+-- Create HNSW index only if pgvector extension is available
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'vector') THEN
+        CREATE INDEX idx_memory_chunks_embedding ON memory_chunks
+            USING hnsw(embedding vector_cosine_ops)
+            WITH (m = 16, ef_construction = 64);
+        RAISE NOTICE 'Created HNSW index on embedding column';
+    ELSE
+        -- Create GIN index on JSONB column as fallback
+        CREATE INDEX idx_memory_chunks_embedding ON memory_chunks USING GIN(embedding);
+        RAISE WARNING 'Created GIN index on JSONB embedding column (less efficient than HNSW)';
+    END IF;
+END
+$$;
+
 CREATE INDEX idx_memory_chunks_document ON memory_chunks(document_id);
 
 -- ==================== Workspace: Heartbeat State ====================
